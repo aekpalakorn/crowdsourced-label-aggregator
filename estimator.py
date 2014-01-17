@@ -55,7 +55,7 @@ class LabelEstimator(object):
 		self.objects = objects
 		self.workers = workers
 		self.labels = labels
-		if true_estimates:
+		if true_estimates is not None:
 			self.true_estimates = true_estimates
 		else:
 			self.true_estimates = None
@@ -88,7 +88,7 @@ class LabelEstimator(object):
 		T_ij = pd.DataFrame(index=self.objects, columns=self.labels)
 		for i in T_ij.index:
 			for j in T_ij.columns:
-				T_ij.loc[i][j] = round(float(len(self.observations.loc[i][self.observations.loc[i]==j]))/len(self.observations.columns), 4)
+				T_ij.loc[i, j] = round(float(len(self.observations.loc[i][self.observations.loc[i]==j]))/len(self.observations.columns), 4)
 
 		return T_ij
 
@@ -224,7 +224,7 @@ class LabelEstimator(object):
 		T = pd.DataFrame(index=self.objects, columns=self.labels)
 		for i in T.index:
 			for j in T.columns:
-				T.loc[i][j] = round(float(len(self.observations.loc[i][self.observations.loc[i]==j]))/len(self.observations.columns), 4)
+				T.loc[i, j] = round(float(len(self.observations.loc[i][self.observations.loc[i]==j]))/len(self.observations.columns), 4)
 
 		if self.true_estimates is not None:
 			for i in self.true_estimates.index:
@@ -256,8 +256,8 @@ class LabelEstimator(object):
 
 
 if __name__ == '__main__':
-	objects = np.arange(50)
-	workers = np.arange(5)
+	objects = np.arange(10)
+	workers = np.arange(3)
 	labels = np.arange(5)
 	observations = rand_observations(objects, workers, labels)
 	print 'Observation:\n%s' % observations
