@@ -40,6 +40,7 @@ def generate_true_estimates(true_estimates, labels):
 
 class LabelEstimator(object):
 	''' Estimate true labels from a set of observations
+		Outputs of the EM algorithm: Class priors, error rates, and estimated labels, are accessible via class attributes, respectively: em_p, em_pi, em_T
 	'''
 
 	def __init__(self, observations, objects, workers, labels, true_estimates=None):
@@ -59,6 +60,11 @@ class LabelEstimator(object):
 			self.true_estimates = true_estimates
 		else:
 			self.true_estimates = None
+
+		# Variables for storing clas priors (p), error rates (pi), and estimated labels (T) at the end of EM steps 
+		self.em_p = None
+		self.em_pi = None
+		self.em_T = None
 
 		# Generate n^k_il: k = workers, i = objects, l = labels
 		self.n = self._worker_object_responses()
@@ -164,6 +170,7 @@ class LabelEstimator(object):
 		# Step 2: Compute marginal probability p_j and error-rates pi^k_jl
 		p = self._marginal_probabilities(T_hat)
 		pi = self._error_rates(T_hat)
+
 				
 		# Step 3: Re-compute T_ij (eq. 2.5 in Dawid and Skenen 1979)
 		# p(T_ij=1 | data) = (p_j * \product_k{\product_l{pi^k_jl **  n^K_il}}) / (\sum_q{p_q * \product_k{\product_l{pi^k_ql **  n^K_il}}})
@@ -198,6 +205,11 @@ class LabelEstimator(object):
 		for i, j in T_nom.index:
 			l = T_nom.loc[i, j]/T_denom[i]
 			T.loc[i, j] = round(l, 4)
+
+		# Storing outputs
+		self.em_p = p
+		self.em_pi = pi
+		self.em_T = T
 
 		if iteration == 0:
 			return self._em_estimator(T, iteration, loglik, threshold, max_iteration)
@@ -271,4 +283,5 @@ if __name__ == '__main__':
 	print 'EM:\n%s' % T
 	T = est.predict('mv')
 	print 'Majority voting:\n%s' % T
-	
+	print 'Class priors: %s' % est.em_p
+	print 'Error rates: %s' % est.em_pi
