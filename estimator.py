@@ -245,6 +245,51 @@ class LabelEstimator(object):
 		return T
 
 
+	def _em_worker_cost(self):
+		''' Estimate the expected cost of each worker (algorithm 2 in Ipeirotis et al. 2010)
+			Perfect workers will have zero cost while random workers/spammers will have high cost
+		'''
+		cost = []
+
+		# for each worker k, estimate worker's probability of assigning labels using eq. 2
+		X = pd.DataFrame(index=self.workers, columns=self.labels)
+		X = X.fillna(0)
+
+		for k in X.index:
+			for l in X.columns:
+				for j in self.labels:
+					X.loc[k, l] += self.em_pi.loc[k, j, l] * self.em_p[j]
+
+		print 'Pr(AC=l):\n %s' % X
+
+		for k in self.workers:
+			c = 0
+			for l in self.labels:
+				# Compute soft label using eq. 1
+				soft = []
+				for j in self.labels:
+					soft.append((self.em_pi.loc[k, j, l] * self.em_p[j])/X.loc[k, l])
+				print 'k=%s, l=%s, soft=%s' % (k, l, soft)
+
+				# Compute cost c using eq. 3. Use simple c_ij where c_ij = 0 iff i == j; 1 iff i != j
+				c_soft = 0
+				for i in self.labels: 
+					for j in self.labels:
+						if i == j:
+							c_ij = 0
+						else:
+							c_ij = 1
+						if not math.isnan(soft[i]) and not math.isnan(soft[j]):
+							c_soft += soft[i] * soft[j] * c_ij
+				
+				c += c_soft * X.loc[k, l]
+
+			cost.append(c) 
+
+		print 'Cost: %s' % cost
+		return cost
+
+
 	def predict(self, method, max_iteration=None):
 		''' Predict labels using EM algorithm or majority voting
 		Args:
@@ -268,9 +313,9 @@ class LabelEstimator(object):
 
 
 if __name__ == '__main__':
-	objects = np.arange(10)
-	workers = np.arange(3)
-	labels = np.arange(5)
+	objects = np.arange(5)
+	workers = np.arange(5)
+	labels = np.arange(2)
 	observations = rand_observations(objects, workers, labels)
 	print 'Observation:\n%s' % observations
 	true_estimates = generate_true_estimates([(1,0), (3,0), (5,0)], labels)
@@ -281,7 +326,9 @@ if __name__ == '__main__':
 	t1 = time.time()
 	print 'Done in %.4f sec' % (t1-t0)
 	print 'EM:\n%s' % T
-	T = est.predict('mv')
-	print 'Majority voting:\n%s' % T
-	print 'Class priors: %s' % est.em_p
-	print 'Error rates: %s' % est.em_pi
+	# print 'Class priors: %s' % est.em_p
+	# print 'Error rates: %s' % est.em_pi
+	# T = est.predict('mv')
+	# print 'Majority voting:\n%s' % T
+
+	est._em_worker_cost()
