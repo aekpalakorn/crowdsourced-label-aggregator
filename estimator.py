@@ -42,6 +42,23 @@ def generate_true_estimates(true_estimates, labels):
 	return pd.DataFrame(x, index=idx, columns=labels)
 
 
+class ObservationGenerator(object):
+	''' Generate observation data of objects-workers matrix
+		Args:
+			objects: Set of indices representing objects
+			workers: Set of indices representing workers
+			labels: Set of indices representing labels
+			pct_expert: Percentage of expert workers
+			pct_normal: Percentage of normal workers
+			pct_sloppy: Percentage of sloppy workers
+			pct_ran: Percentage of random spammers
+			pct_uni: Percentage of uniform spammers 
+	'''
+
+	def __init__(self):
+		pass
+
+
 class LabelEstimator(object):
 	''' Estimate true labels from a set of observations
 		Attributes
