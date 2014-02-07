@@ -1,5 +1,7 @@
-''' Estimate the most likely labels using task outputs from multiple workers. Two approaches are supported: EM algorithm and majority voting.
-The EM algorithm is described in "Maximum Likelihood Estimation of Observer Error-Rates Using the EM Algorithm (Dawid and Skene, 1979)"
+''' Estimate the most likely labels from crowdsourcing tasks. 
+	Two approaches are implemented: EM algorithm and majority voting.
+	The EM algorithm is described in "Maximum Likelihood Estimation of Observer Error-Rates Using the EM Algorithm (Dawid and Skene, 1979)".
+	Workers' cost derived from EM is estimated by the equations 1, 2, and 3 in "Quality Management on Amazon Mechnical Turk (Ipeirotis et al. 2010)".
 '''
 
 import numpy as np
@@ -16,7 +18,7 @@ def rand_observations(objects, workers, labels):
 		workers: Set of workers
 		labels: Set of labels
 	Return:
-		DataFrame of random observations where rows representing objects and columns representing workers
+		Observations
 	'''
 	return pd.DataFrame(np.random.randint(len(labels), size=(len(objects), len(workers))), index=objects, columns=workers)
 
@@ -26,6 +28,8 @@ def generate_true_estimates(true_estimates, labels):
 	Args:
 		true_estimates: List of true estimates as tuples (object index, label index)
 		labels: Set of label indices
+	Return:
+		True label estimates
 	'''
 	x = []
 	idx = []
@@ -40,14 +44,19 @@ def generate_true_estimates(true_estimates, labels):
 
 class LabelEstimator(object):
 	''' Estimate true labels from a set of observations
-		Outputs of the EM algorithm: Class priors, error rates, and estimated labels, are accessible via class attributes, respectively: em_p, em_pi, em_T
+		Attributes
+			self.T: Estimated correct labels (rows=objects, columns=labels)
+		Atrributes specific to EM algorithm: 
+			self.em_p: Estimated class priors (columns=labels)
+			self.em_pi: Estimated error rates (MultiIndex (k=worker, j=correct label, l=assigned label))
+			self.em_C: Estimated workers' cost (columns=workers)
 	'''
 
 	def __init__(self, observations, objects, workers, labels, true_estimates=None):
 		''' Instantiate the estimator with specific parameters
 		Args:
 			observations: Observations where each tuple comprising (object index, worker index, label index)
-			true_estimates: Known true estimates
+			true_estimates: True correct labels
 			objects: Set of indices representing objects
 			workers: Set of indices representing workers
 			labels: Set of indices representing labels
@@ -62,18 +71,19 @@ class LabelEstimator(object):
 			self.true_estimates = None
 
 		# Variables for storing clas priors (p), error rates (pi), and estimated labels (T) at the end of EM steps 
+		self.T = None
 		self.em_p = None
 		self.em_pi = None
-		self.em_T = None
+		self.em_C = None
 
 		# Generate n^k_il: k = workers, i = objects, l = labels
-		self.n = self._worker_object_responses()
+		self.n = self._workers_objects_labels()
 
 
-	def _worker_object_responses(self):
+	def _workers_objects_labels(self):
 		''' Generate n^k_il assuming that each worker works with an object only once
 		Return:
-			Series representing responses from workers on corresponding objects
+			Workers (k) ' assigned labels (l) for specific objects (i)
 		'''
 		tuples = []
 		for i in self.objects:
@@ -89,7 +99,7 @@ class LabelEstimator(object):
 		''' Initialize T_ij = \sum_k{n^k_il}/sum_k{sum_k{n^k_il}} (eq. 3.1 in Dawid and Skene 1979)
 			This is the same as majority voting estimates
 		Return:
-			DataFrame of initial object-label estimates
+			Estimated correct labels
 		'''
 		T_ij = pd.DataFrame(index=self.objects, columns=self.labels)
 		for i in T_ij.index:
@@ -99,16 +109,16 @@ class LabelEstimator(object):
 		return T_ij
 
 
-	def _marginal_probabilities(self, T_ij):
+	def _class_priors(self, T_ij):
 		''' Compute marginal probabilities p_j = \sum_i{T_ij}/|I| (eq. 2.4 in Dawid and Skene 1979)
 		Args:
-			T_ij: Object-label estimates
+			T_ij: Estimated correct labels
 		Return:
-			Array of marginal probabilities
+			Estimated class priors
 		'''
 		p_j = []
 		for j in T_ij.columns:
-			p_j.append(T_ij[j].sum()/len(T_ij.index))
+			p_j.append(float(T_ij[j].sum())/len(T_ij.index))
 		return p_j
 
 
@@ -117,7 +127,7 @@ class LabelEstimator(object):
 		Args:
 			T_ij: Estimates
 		Return:
-			Series representing error-rates
+			Estimated error-rates
 		'''
 		tuples = [x for x in itertools.product(*[self.workers, self.labels, self.labels])]
 		pi = pd.Series(index=pd.MultiIndex.from_tuples(tuples, names=['k', 'j', 'l']))
@@ -142,8 +152,8 @@ class LabelEstimator(object):
 		return pi
 
 
-	def _em_estimator(self, T_hat=None, iteration=None, prev_loglik=None, threshold=0.001, max_iteration=50):
-		''' Predict labels using EM algorithm
+	def _em_estimator(self, T_hat=None, iteration=None, prev_loglik=None, threshold=0.001, max_iteration=50, verbose=False):
+		''' Estimate correct labels using EM algorithm
 		Args:
 			T_hat: Starting estimates
 			iteration: Current iteration
@@ -151,9 +161,10 @@ class LabelEstimator(object):
 			threshold: log-likelihood threshold as a termination criteria
 			max_iteration: Maximum number of iterations
 		Return:
-			T: Object-label estimates
+			Estimated correct labels
 		'''
 		t0 = time.time()
+
 		# Step 1: Initialize T_ij = \sum_k{n^k_il}/sum_k{sum_k{n^k_il}}
 		if T_hat is None:
 			T_hat = self._init_estimates()
@@ -168,10 +179,9 @@ class LabelEstimator(object):
 			iteration += 1
 
 		# Step 2: Compute marginal probability p_j and error-rates pi^k_jl
-		p = self._marginal_probabilities(T_hat)
+		p = self._class_priors(T_hat)
 		pi = self._error_rates(T_hat)
 
-				
 		# Step 3: Re-compute T_ij (eq. 2.5 in Dawid and Skenen 1979)
 		# p(T_ij=1 | data) = (p_j * \product_k{\product_l{pi^k_jl **  n^K_il}}) / (\sum_q{p_q * \product_k{\product_l{pi^k_ql **  n^K_il}}})
 		T = pd.DataFrame(index=self.objects, columns=self.labels)
@@ -206,13 +216,12 @@ class LabelEstimator(object):
 			l = T_nom.loc[i, j]/T_denom[i]
 			T.loc[i, j] = round(l, 4)
 
-		# Storing outputs
+		self.T = T
 		self.em_p = p
 		self.em_pi = pi
-		self.em_T = T
 
 		if iteration == 0:
-			return self._em_estimator(T, iteration, loglik, threshold, max_iteration)
+			return self._em_estimator(T, iteration, loglik, threshold, max_iteration, verbose)
 		elif iteration >= max_iteration:
 			return T
 
@@ -221,17 +230,19 @@ class LabelEstimator(object):
 		# Step 4: If converge, terminate; otherwise repeate 2 and 3
 		diff = round(math.fabs(loglik-prev_loglik)/math.fabs(loglik), 4)
 		if diff > threshold:
-			print 'iteration %s:/%s loglik=%s,  prev_loglik=%s, diff_pct=%.4f, time=%.4f sec' % (iteration, max_iteration, loglik, prev_loglik, diff, (t1-t0))
-			return self._em_estimator(T, iteration, loglik, threshold, max_iteration)
+			if verbose:
+				print 'iteration %s:/%s loglik=%.4f,  prev_loglik=%.4f, diff_pct=%.4f, time=%.4f sec' % (iteration, max_iteration, loglik, prev_loglik, diff, (t1-t0))
+			return self._em_estimator(T, iteration, loglik, threshold, max_iteration, verbose)
 		
-		print 'iteration %s/%s: loglik=%s,  prev_loglik=%s, diff_pct=%.4f, time=%.4f sec' % (iteration, max_iteration, loglik, prev_loglik, diff, (t1-t0))
+		if verbose:
+			print 'iteration %s/%s: loglik=%.4f,  prev_loglik=%.4f, diff_pct=%.4f, time=%.4f sec' % (iteration, max_iteration, loglik, prev_loglik, diff, (t1-t0))
 		return T 
 
 
 	def _mv_estimator(self):
-		''' Predict levels using majority voting T_ij = \sum_k{n^k_il}/sum_k{sum_k{n^k_il}}
+		''' Estimate correct labels using majority voting T_ij = \sum_k{n^k_il}/sum_k{sum_k{n^k_il}}
 		Return:
-			DataFrame representing object-label estimates
+			Estimated correct labels
 		'''
 		T = pd.DataFrame(index=self.objects, columns=self.labels)
 		for i in T.index:
@@ -242,16 +253,28 @@ class LabelEstimator(object):
 			for i in self.true_estimates.index:
 				T.loc[i] = self.true_estimates.loc[i]
 
+		self.T = T
 		return T
 
 
-	def _em_worker_cost(self):
-		''' Estimate the expected cost of each worker (algorithm 2 in Ipeirotis et al. 2010)
-			Perfect workers will have zero cost while random workers/spammers will have high cost
+	def _cost(self, i, j):
+		''' Naive cost function
+			if i == j, cost = 0; else cost = 1
 		'''
-		cost = []
+		if i == j:
+			return 0
+		else:
+			return 1
 
-		# for each worker k, estimate worker's probability of assigning labels using eq. 2
+
+	def _workers_cost(self):
+		''' Estimate the expected cost of each worker self.C (Ipeirotis et al. 2010)
+			Perfect workers will have zero cost while random workers/spammers will have high cost
+			Ipeirotis et al. consider workers with cost < 0.5 to be a good quality worker
+		'''
+		wcost = []
+
+		# Estimate workers' probability of assigning labels using eq. 2
 		X = pd.DataFrame(index=self.workers, columns=self.labels)
 		X = X.fillna(0)
 
@@ -260,49 +283,41 @@ class LabelEstimator(object):
 				for j in self.labels:
 					X.loc[k, l] += self.em_pi.loc[k, j, l] * self.em_p[j]
 
-		print 'Pr(AC=l):\n %s' % X
-
+		# For each worker k and label j, estimate the soft label vector (eq. 1) and workers' cost (eq. 3)
 		for k in self.workers:
 			c = 0
 			for l in self.labels:
-				# Compute soft label using eq. 1
 				soft = []
 				for j in self.labels:
 					soft.append((self.em_pi.loc[k, j, l] * self.em_p[j])/X.loc[k, l])
-				print 'k=%s, l=%s, soft=%s' % (k, l, soft)
 
-				# Compute cost c using eq. 3. Use simple c_ij where c_ij = 0 iff i == j; 1 iff i != j
 				c_soft = 0
 				for i in self.labels: 
 					for j in self.labels:
-						if i == j:
-							c_ij = 0
-						else:
-							c_ij = 1
 						if not math.isnan(soft[i]) and not math.isnan(soft[j]):
-							c_soft += soft[i] * soft[j] * c_ij
-				
+							c_soft += soft[i] * soft[j] * self._cost(i, j)
+
 				c += c_soft * X.loc[k, l]
-
-			cost.append(c) 
-
-		print 'Cost: %s' % cost
-		return cost
+			wcost.append('%.4f' % c) 
+		self.em_C = wcost
 
 
-	def predict(self, method, max_iteration=None):
-		''' Predict labels using EM algorithm or majority voting
+	def estimate(self, method, max_iteration=None, verbose=False):
+		''' Estimate correct labels of objects using a specific algorithm
 		Args:
-			method: "em" for EM algorithm, "mv" for majority voting
+			method: em for EM algorithm, mv for majority voting
 			max_iteration: Maximum number of iterations for EM algorithm
-		Returns:
-			DataFrame where rows representing objects, columns representing labels, and cells representing probabiliites
+		Return:
+			Estimated correct labels
 		'''
 		if method=='em':
 			if max_iteration is not None:
-				estimators = self._em_estimator(None, max_iteration=max_iteration)
+				estimators = self._em_estimator(None, max_iteration=max_iteration, verbose=verbose)
 			else:
-				estimators = self._em_estimator(None)
+				estimators = self._em_estimator(None, verbose=verbose)
+
+			# estimate the worker cost
+			self._workers_cost()
 
 			return estimators
 		
@@ -313,22 +328,17 @@ class LabelEstimator(object):
 
 
 if __name__ == '__main__':
-	objects = np.arange(5)
-	workers = np.arange(5)
-	labels = np.arange(2)
+	objects = np.arange(10)
+	workers = np.arange(50)
+	labels = np.arange(4)
 	observations = rand_observations(objects, workers, labels)
-	print 'Observation:\n%s' % observations
-	true_estimates = generate_true_estimates([(1,0), (3,0), (5,0)], labels)
-
-	est = LabelEstimator(observations, objects, workers, labels, true_estimates)
+	# true_estimates = generate_true_estimates([(1,0), (3,0), (5,0)], labels)
+	est = LabelEstimator(observations, objects, workers, labels, None)
 	t0 = time.time()
-	T = est.predict('em')
+	T = est.estimate('em', verbose=True)
 	t1 = time.time()
 	print 'Done in %.4f sec' % (t1-t0)
+	print 'Observation:\n%s' % observations
 	print 'EM:\n%s' % T
-	# print 'Class priors: %s' % est.em_p
-	# print 'Error rates: %s' % est.em_pi
-	# T = est.predict('mv')
-	# print 'Majority voting:\n%s' % T
-
-	est._em_worker_cost()
+	print 'Workers Cost:\n%s' % est.em_C
+	
