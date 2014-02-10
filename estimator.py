@@ -44,19 +44,47 @@ def generate_true_estimates(true_estimates, labels):
 
 class ObservationGenerator(object):
 	''' Generate observation data of objects-workers matrix
-		Args:
-			objects: Set of indices representing objects
-			workers: Set of indices representing workers
-			labels: Set of indices representing labels
-			pct_expert: Percentage of expert workers
-			pct_normal: Percentage of normal workers
-			pct_sloppy: Percentage of sloppy workers
-			pct_ran: Percentage of random spammers
-			pct_uni: Percentage of uniform spammers 
+		Attributes:
+			self.obs: Generated observation dataframe
+			self.workers_types: Labeled workers by types: Expert, normal, random spammer, sloppy, and uniform spammer
+			self.r: Reliability rating of each worker type
+			self.dist: Worker type distribution
 	'''
 
-	def __init__(self):
-		pass
+	def __init__(self, objects, workers, labels, dist):
+		''' Generate observations according to specific parameters
+			Args:
+				objects: Set of indices representing objects
+				workers: Set of indices representing workers
+				labels: Set of indices representing labels
+				dist: Worker type distribution, i.e. [p_expert, p_normal, p_random, p_sloppy, p_uniform]
+		'''
+		self.obs = pd.DataFrame(index=objects, columns=workers)
+		true_labels = np.random.randint(max(labels)+1, size=len(objects))
+		worker_types = ['expert', 'normal', 'random', 'sloppy', 'uniform']
+		self.r = {'expert': (0.9, 1), 'normal': (0.6, 0.9), 'random': (0.4, 0.6), 'sloppy': (0.1, 0.4), 'uniform': None}
+		if dist == None:
+			self.dist = [0.2, 0.2, 0.2, 0.2, 0.2]
+		if int(sum(dist)) > 1:
+			raise Exception('Probabilities do not sum up to 1')
+		self.dist = dist
+		self.workers_types = np.random.choice(worker_types, len(workers), p=self.dist)
+		
+		for j in self.obs.columns:
+			w = self.workers_types[j]
+			if w != 'uniform':
+				num_obj = len(objects) * np.random.uniform(self.r[w][0], self.r[w][1])
+				correct_answer_indexes = np.random.permutation(np.arange(len(objects)))[:num_obj]
+				for i in self.obs.index:
+					if i in correct_answer_indexes:
+						self.obs.loc[i, j] = true_labels[i]
+					else:
+						l = list(labels.copy())
+						l.remove(true_labels[i])
+						self.obs.loc[i, j] = np.random.choice(l, 1)[0]
+			else:
+				l = np.random.choice(labels, 1)[0]
+				self.obs[j] = self.obs[j].fillna(value=l)
 
 
 class LabelEstimator(object):
@@ -348,8 +376,9 @@ if __name__ == '__main__':
 	objects = np.arange(10)
 	workers = np.arange(50)
 	labels = np.arange(4)
-	observations = rand_observations(objects, workers, labels)
-	# true_estimates = generate_true_estimates([(1,0), (3,0), (5,0)], labels)
+	dist = [0.3, 0.4, 0.1, 0.1, 0.1] # [expert, normal, random, sloppy, uniform]
+	gen = ObservationGenerator(objects, workers, labels, dist)
+	observations = gen.obs
 	est = LabelEstimator(observations, objects, workers, labels, None)
 	t0 = time.time()
 	T = est.estimate('em', verbose=True)
@@ -357,5 +386,6 @@ if __name__ == '__main__':
 	print 'Done in %.4f sec' % (t1-t0)
 	print 'Observation:\n%s' % observations
 	print 'EM:\n%s' % T
-	print 'Workers Cost:\n%s' % est.em_C
-	
+	print "Workers' types and costs"
+	for i in workers:
+		print '%s\t%s' % (gen.workers_types[i], est.em_C[i])
