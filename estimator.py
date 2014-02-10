@@ -46,6 +46,7 @@ class ObservationGenerator(object):
 	''' Generate observation data of objects-workers matrix
 		Attributes:
 			self.obs: Generated observation dataframe
+			self.true_labels: True labels
 			self.workers_types: Labeled workers by types: Expert, normal, random spammer, sloppy, and uniform spammer
 			self.r: Reliability rating of each worker type
 			self.dist: Worker type distribution
@@ -60,7 +61,7 @@ class ObservationGenerator(object):
 				dist: Worker type distribution, i.e. [p_expert, p_normal, p_random, p_sloppy, p_uniform]
 		'''
 		self.obs = pd.DataFrame(index=objects, columns=workers)
-		true_labels = np.random.randint(max(labels)+1, size=len(objects))
+		self.true_labels = np.random.randint(max(labels)+1, size=len(objects))
 		worker_types = ['expert', 'normal', 'random', 'sloppy', 'uniform']
 		self.r = {'expert': (0.9, 1), 'normal': (0.6, 0.9), 'random': (0.4, 0.6), 'sloppy': (0.1, 0.4), 'uniform': None}
 		if dist == None:
@@ -77,10 +78,10 @@ class ObservationGenerator(object):
 				correct_answer_indexes = np.random.permutation(np.arange(len(objects)))[:num_obj]
 				for i in self.obs.index:
 					if i in correct_answer_indexes:
-						self.obs.loc[i, j] = true_labels[i]
+						self.obs.loc[i, j] = self.true_labels[i]
 					else:
 						l = list(labels.copy())
-						l.remove(true_labels[i])
+						l.remove(self.true_labels[i])
 						self.obs.loc[i, j] = np.random.choice(l, 1)[0]
 			else:
 				l = np.random.choice(labels, 1)[0]
@@ -386,6 +387,7 @@ if __name__ == '__main__':
 	print 'Done in %.4f sec' % (t1-t0)
 	print 'Observation:\n%s' % observations
 	print 'EM:\n%s' % T
+	print 'True Labels:\n%s' % gen.true_labels
 	print "Workers' types and costs"
 	for i in workers:
 		print '%s\t%s' % (gen.workers_types[i], est.em_C[i])
