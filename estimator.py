@@ -1,7 +1,6 @@
-''' Estimate the most likely labels from crowdsourcing tasks. 
-	Two approaches are implemented: EM algorithm and majority voting.
-	The EM algorithm is described in "Maximum Likelihood Estimation of Observer Error-Rates Using the EM Algorithm (Dawid and Skene, 1979)".
-	Workers' cost derived from EM is estimated by the equations 1, 2, and 3 in "Quality Management on Amazon Mechnical Turk (Ipeirotis et al. 2010)".
+''' 
+This module implments the label estimator techniques (EM and majority voting) 
+and the observation generator to simulate data from crowdsourcing tasks for testing.
 '''
 
 import numpy as np
@@ -11,54 +10,25 @@ import itertools
 import time
 
 
-def rand_observations(objects, workers, labels):
-	''' Generate random observations
-	Args:
-		objects: Set of objects
-		workers: Set of workers
-		labels: Set of labels
-	Return:
-		Observations
-	'''
-	return pd.DataFrame(np.random.randint(len(labels), size=(len(objects), len(workers))), index=objects, columns=workers)
-
-
-def generate_true_estimates(true_estimates, labels):
-	''' Generate true estimates DataFrame
-	Args:
-		true_estimates: List of true estimates as tuples (object index, label index)
-		labels: Set of label indices
-	Return:
-		True label estimates
-	'''
-	x = []
-	idx = []
-	for o, l in true_estimates:
-		v = np.zeros(len(labels))
-		v[l] = 1
-		x.append(v)
-		idx.append(o)
-	
-	return pd.DataFrame(x, index=idx, columns=labels)
-
-
 class ObservationGenerator(object):
-	''' Generate observation data of objects-workers matrix
-		Attributes:
-			self.obs: Generated observation dataframe
-			self.true_labels: True labels
-			self.workers_types: Labeled workers by types: Expert, normal, random spammer, sloppy, and uniform spammer
-			self.r: Reliability rating of each worker type
-			self.dist: Worker type distribution
+	''' Generate observation data of objects-workers dataframe. Based on the framework by Nguyen et al. 2013.
+	Attributes
+		obs: Generated observation dataframe
+		true_labels: True labels
+		workers_types: Labeled workers by types: Expert, normal, random spammer, sloppy, and uniform spammer
+		r: Reliability rating of each worker type
+		dist: Worker type distribution
+	References
+		Q. V. H. Nguyen et al. (2013) An Evaluation of Aggregation Techniques in Crowdsourcing. In Proc. of WISE.
 	'''
 
 	def __init__(self, objects, workers, labels, dist):
 		''' Generate observations according to specific parameters
-			Args:
-				objects: Set of indices representing objects
-				workers: Set of indices representing workers
-				labels: Set of indices representing labels
-				dist: Worker type distribution, i.e. [p_expert, p_normal, p_random, p_sloppy, p_uniform]
+		Args
+			objects: Set of indices representing objects
+			workers: Set of indices representing workers
+			labels: Set of indices representing labels
+			dist: Worker type distribution, i.e. [p_expert, p_normal, p_random, p_sloppy, p_uniform]
 		'''
 		self.obs = pd.DataFrame(index=objects, columns=workers)
 		self.true_labels = np.random.randint(max(labels)+1, size=len(objects))
@@ -90,17 +60,20 @@ class ObservationGenerator(object):
 
 class LabelEstimator(object):
 	''' Estimate true labels from a set of observations
-		Attributes
-			self.T: Estimated correct labels (rows=objects, columns=labels)
-		Atrributes specific to EM algorithm: 
-			self.em_p: Estimated class priors (columns=labels)
-			self.em_pi: Estimated error rates (MultiIndex (k=worker, j=correct label, l=assigned label))
-			self.em_C: Estimated workers' cost (columns=workers)
+	Attributes
+		T: Estimated labels dataframe (index=object ID, column=label ID)
+	Atrributes specific to EM algorithm
+		em_p: Estimated class priors (columns=labels)
+		em_pi: Estimated error rates (MultiIndex (k=worker, j=correct label, l=assigned label))
+		em_C: Estimated workers' cost (columns=workers)
+	References
+		A. P. Dawid and  A. M. Skene (1979) Maximum Likelihood Estimation of Observer Error-Rates Using the EM Algorithm. Journal of the Royal Statistical Society. Series C (Applied Statistis), 28:1, pp. 20-28
+		P. G. Ipeirotis et al. (2010) Quality Management on Amazon Mechanical Turk. In. Proc. of HCOMP.
 	'''
 
 	def __init__(self, observations, objects, workers, labels, true_estimates=None):
 		''' Instantiate the estimator with specific parameters
-		Args:
+		Args
 			observations: Observations where each tuple comprising (object index, worker index, label index)
 			true_estimates: True correct labels
 			objects: Set of indices representing objects
@@ -128,7 +101,7 @@ class LabelEstimator(object):
 
 	def _workers_objects_labels(self):
 		''' Generate n^k_il assuming that each worker works with an object only once
-		Return:
+		Returns
 			Workers (k) ' assigned labels (l) for specific objects (i)
 		'''
 		tuples = []
@@ -144,7 +117,7 @@ class LabelEstimator(object):
 	def _init_estimates(self):
 		''' Initialize T_ij = \sum_k{n^k_il}/sum_k{sum_k{n^k_il}} (eq. 3.1 in Dawid and Skene 1979)
 			This is the same as majority voting estimates
-		Return:
+		Returns
 			Estimated correct labels
 		'''
 		T_ij = pd.DataFrame(index=self.objects, columns=self.labels)
@@ -157,9 +130,9 @@ class LabelEstimator(object):
 
 	def _class_priors(self, T_ij):
 		''' Compute marginal probabilities p_j = \sum_i{T_ij}/|I| (eq. 2.4 in Dawid and Skene 1979)
-		Args:
+		Args
 			T_ij: Estimated correct labels
-		Return:
+		Returns
 			Estimated class priors
 		'''
 		p_j = []
@@ -170,9 +143,9 @@ class LabelEstimator(object):
 
 	def _error_rates(self, T_ij):
 		''' Compute error-rates pi^k_jl = \sum_j{T_ij*n^k_il}/sum_l{sum_i{T_ij*n^k_il}} (eq. 2.3 in Dawid and Skene 1979)
-		Args:
+		Args
 			T_ij: Estimates
-		Return:
+		Returns
 			Estimated error-rates
 		'''
 		tuples = [x for x in itertools.product(*[self.workers, self.labels, self.labels])]
@@ -200,13 +173,13 @@ class LabelEstimator(object):
 
 	def _em_estimator(self, T_hat=None, iteration=None, prev_loglik=None, threshold=0.001, max_iteration=50, verbose=False):
 		''' Estimate correct labels using EM algorithm
-		Args:
+		Args
 			T_hat: Starting estimates
 			iteration: Current iteration
 			prev_loglik: log-likelihood of the previous iteration
 			threshold: log-likelihood threshold as a termination criteria
 			max_iteration: Maximum number of iterations
-		Return:
+		Returns
 			Estimated correct labels
 		'''
 		t0 = time.time()
@@ -260,7 +233,8 @@ class LabelEstimator(object):
 
 		for i, j in T_nom.index:
 			l = T_nom.loc[i, j]/T_denom[i]
-			T.loc[i, j] = round(l, 4)
+			# T.loc[i, j] = round(l, 4)
+			T.loc[i, j] = l
 
 		self.T = T
 		self.em_p = p
@@ -287,7 +261,7 @@ class LabelEstimator(object):
 
 	def _mv_estimator(self):
 		''' Estimate correct labels using majority voting T_ij = \sum_k{n^k_il}/sum_k{sum_k{n^k_il}}
-		Return:
+		Returns
 			Estimated correct labels
 		'''
 		T = pd.DataFrame(index=self.objects, columns=self.labels)
@@ -353,7 +327,7 @@ class LabelEstimator(object):
 		Args:
 			method: em for EM algorithm, mv for majority voting
 			max_iteration: Maximum number of iterations for EM algorithm
-		Return:
+		Returns
 			Estimated correct labels
 		'''
 		if method=='em':
