@@ -17,9 +17,18 @@ Dependencies
 
 Usage
 -----
-Run `python estimator.py` 
+Run `python test.py` with the following parameters:
 
-The example generates synthethic observations given the lists of objects, workers, labels, and worker-type distribution as parameters. Then, it estimates the true labels from the test data using the EM algorithm.
+* `-o` Number of objects
+* `-w` Number of workers
+* `-l` Number of unique labels
+* `-d` Worker-type distribution as a list of probabilities in the following order [expert, normal, random, sloppy, uniform]
+
+For example:
+
+`python test.py -o 10 -w 50 -l 4 -d 0.3 0.4 0.1 0.1 0.1`
+
+The example generates synthethic observations given 10 objects, 50 workers (30% are expert, 40% are normal, 10% are random spammer, 10% are sloppy, and 10% are uniform spammer), and 4 unique labels as parameters. Then, it estimates the true labels from the test data using the EM algorithm.
 
 
 References
