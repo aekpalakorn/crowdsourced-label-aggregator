@@ -345,23 +345,3 @@ class LabelEstimator(object):
 			return self._mv_estimator()
 		else:
 			raise Exception('Error: Unrecognized method "'+method+'"')
-
-
-if __name__ == '__main__':
-	objects = np.arange(10)
-	workers = np.arange(50)
-	labels = np.arange(4)
-	dist = [0.3, 0.4, 0.1, 0.1, 0.1] # [expert, normal, random, sloppy, uniform]
-	gen = ObservationGenerator(objects, workers, labels, dist)
-	observations = gen.obs
-	est = LabelEstimator(observations, objects, workers, labels, None)
-	t0 = time.time()
-	T = est.estimate('em', verbose=True)
-	t1 = time.time()
-	print 'Done in %.4f sec' % (t1-t0)
-	print 'Observation:\n%s' % observations
-	print 'EM:\n%s' % T
-	print 'True Labels:\n%s' % gen.true_labels
-	print "Workers' types and costs"
-	for i in workers:
-		print '%s\t%s' % (gen.workers_types[i], est.em_C[i])
