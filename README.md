@@ -1,4 +1,4 @@
-python-label-aggregator
+crowdsourced-label-aggregator
 =======================
 
 Estimate true labels of objects and qualities (costs) of workers from multiple workers in crowdsourcing tasks using EM algorithm (Dawid and Skene, 1979; Ipeirotis et al. 2010). Test data are generated based on the framework by Nguyen et al. 2013.
