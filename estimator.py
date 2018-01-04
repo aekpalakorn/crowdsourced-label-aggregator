@@ -45,7 +45,7 @@ class ObservationGenerator(object):
 			w = self.workers_types[j]
 			if w != 'uniform':
 				num_obj = len(objects) * np.random.uniform(self.r[w][0], self.r[w][1])
-				correct_answer_indexes = np.random.permutation(np.arange(len(objects)))[:num_obj]
+				correct_answer_indexes = np.random.permutation(np.arange(len(objects)))[:int(num_obj)]
 				for i in self.obs.index:
 					if i in correct_answer_indexes:
 						self.obs.loc[i, j] = self.true_labels[i]
